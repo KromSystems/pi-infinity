@@ -37,7 +37,7 @@ jobs:
           head -c 200 pi_async.txt
 
       - name: 📤 Upload result as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: computed-pi
           path: pi_async.txt
