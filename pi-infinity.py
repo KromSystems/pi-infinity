@@ -1,8 +1,9 @@
 import asyncio
-from concurrent.futures import ProcessPoolExecutor
 import os
+from concurrent.futures import ProcessPoolExecutor
+import time
 
-# Формула Bailey–Borwein–Plouffe (BBP) для вычисления n-го шестнадцатеричного знака числа π
+# BBP formula для вычисления n-го шестнадцатеричного знака числа π
 def bbp_term(n: int) -> float:
     return (1 / 16**n) * (
         4 / (8*n + 1) -
@@ -12,51 +13,47 @@ def bbp_term(n: int) -> float:
     )
 
 def compute_pi_chunk(start, end):
-    """Вычисление части числа Пи с помощью BBP"""
-    print(f"Вычисляю часть от {start} до {end}")
     pi = 0.0
     for n in range(start, end):
         pi += bbp_term(n)
     return pi
 
-async def write_pi_to_file(filename: str, total_digits: int = 10_000, chunk_size: int = 100):
-    """
-    Асинхронная функция для записи числа Пи в файл
-    """
+async def write_pi_to_file(filename: str, digits_per_run: int = 1000, delay: int = 10):
     loop = asyncio.get_event_loop()
-    file_exists = os.path.exists(filename)
+    executor = ProcessPoolExecutor()
 
-    with open(filename, "a") as f:
-        if not file_exists or os.path.getsize(filename) == 0:
-            f.write("3.\n")  # Записываем начальные цифры
+    iteration = 0
+    total_runtime = 0
+    start_time = time.time()
 
-    async with aiofiles.open(filename, "a") as f:
-        tasks = []
-        for i in range(0, total_digits, chunk_size):
-            start = i
-            end = i + chunk_size
-            tasks.append(loop.run_in_executor(None, compute_pi_chunk, start, end))
+    while total_runtime < 2 * 60 * 60:  # 2 часа
+        start = iteration * digits_per_run
+        end = start + digits_per_run
 
-        results = await asyncio.gather(*tasks)
+        print(f"[{iteration}] Вычисляю {digits_per_run} знаков от {start} до {end}")
+        result = await loop.run_in_executor(executor, compute_pi_chunk, start, end)
 
-        full_pi = sum(results)
-        hex_pi = format(full_pi, ".50f")  # Приближение к десятичному представлению
+        hex_pi = format(result, ".50f")
+        decimal_part = str(hex_pi).replace("3.", "").replace(".", "")[:digits_per_run]
 
-        # Убираем "3." из начала
-        decimal_part = str(hex_pi).replace("3.", "").replace(".", "")[:total_digits]
+        with open(filename, "a") as f:
+            if os.path.getsize(filename) == 0:
+                f.write("3.\n")
+            f.write(decimal_part + "\n")
 
-        print(f"Записываю {len(decimal_part)} знаков в файл...")
-        await f.write(decimal_part + "\n")
-        print("Запись завершена.")
+        print(f"[{iteration}] Сохранено {digits_per_run} знаков.")
+        iteration += 1
+
+        # Небольшая пауза, чтобы не перегружать CPU
+        await asyncio.sleep(delay)
+
+        total_runtime = time.time() - start_time
+
+    print("Вычисление завершено за 2 часа.")
 
 async def main():
     filename = "pi_async.txt"
-    await write_pi_to_file(filename, total_digits=1000, chunk_size=100)
+    await write_pi_to_file(filename)
 
 if __name__ == "__main__":
-    try:
-        import aiofiles
-    except ImportError:
-        raise SystemExit("Установите aiofiles: pip install aiofiles")
-
     asyncio.run(main())
